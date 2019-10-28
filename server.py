@@ -134,6 +134,7 @@ class ClientHandler(asyncio.Protocol):
 			logger.warning("No filename in Open")
 			return False
 
+		print(message)
 		# Only chars and letters in the filename
 		file_name = re.sub(r'[^\w\.]', '', message['file_name'])
 		file_path = os.path.join(self.storage_dir, file_name)

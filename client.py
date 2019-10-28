@@ -30,6 +30,24 @@ class ClientProtocol(asyncio.Protocol):
         self.state = STATE_CONNECT  # Initial State
         self.buffer = ''  # Buffer to receive data chunks
 
+    def handshake(self):
+
+        symmetric_cypher = int(input("Symmetric Cypher ( aes128(1), 3des(2) or chacha20(3) ): "))
+        cypher_mode = int(input("Cypher mode ( cbc(1) or ctr(2) ): "))
+        synthesis_algorithm = int(input("Synthesis Algorithm ( sha-256(1) or sha-512(2) )"))
+
+        if symmetric_cypher < 1 or symmetric_cypher > 3:
+            logger.error("Symmetric Cypher not allowed, try again!")
+            self.handshake()
+        elif cypher_mode < 1 or cypher_mode > 2:
+            logger.error("Cypher mode not allowed, try again!")
+            self.handshake()
+        elif synthesis_algorithm < 1 or synthesis_algorithm > 2:
+            logger.error("Synthesis Algorithm not allowed, try again!")
+            self.handshake()
+
+        return symmetric_cypher, cypher_mode, synthesis_algorithm
+
     def connection_made(self, transport) -> None:
         """
         Called when the client connects.
@@ -40,12 +58,14 @@ class ClientProtocol(asyncio.Protocol):
         self.transport = transport
 
         logger.debug('Connected to Server')
-        
-        message = {'type': 'OPEN', 'file_name': self.file_name}
+
+        symmetric_cypher, cypher_mode, synthesis_algorithm = self.handshake()
+
+        message = {'type': 'OPEN', 'file_name': self.file_name, 'symmetric_cypher': symmetric_cypher,
+                   'cypher_mode': cypher_mode, 'synthesis_algorithm': synthesis_algorithm}
         self._send(message)
 
         self.state = STATE_OPEN
-
 
     def data_received(self, data: str) -> None:
         """
@@ -83,7 +103,7 @@ class ClientProtocol(asyncio.Protocol):
         :return:
         """
 
-        #logger.debug("Frame: {}".format(frame))
+        # logger.debug("Frame: {}".format(frame))
         try:
             message = json.loads(frame)
         except:
@@ -186,6 +206,7 @@ def main():
     loop.run_until_complete(coro)
     loop.run_forever()
     loop.close()
+
 
 if __name__ == '__main__':
     main()
