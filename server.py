@@ -6,6 +6,7 @@ import coloredlogs, logging
 import re
 import os
 import getpass
+import time
 from aio_tcpserver import tcp_server
 from default_crypto import Asymmetric, Symmetric, DHexchange
 
@@ -97,22 +98,29 @@ class ClientHandler(asyncio.Protocol):
         elif self.state == STATE_OPEN:
             if self.symmetric_cypher == 2:
                 data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
-                                              self.cypher_mode,
+                                              self.cypher_mode
                                               )
             else:
                 data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
                                               self.cypher_mode,
                                               key=self.shared)
-            # data = self.symmetric.handshake_decrypt(data, key=self.shared)
+                # TEST NO DH
+                # data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
+                #                               self.cypher_mode
+                #                               )
         elif self.state == STATE_DATA:
             if self.symmetric_cypher == 2:
                 data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
-                                              self.cypher_mode,
+                                              self.cypher_mode
                                               )
             else:
                 data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
                                               self.cypher_mode,
                                               key=self.shared)
+                # TEST NO DH
+                # data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
+                #                               self.cypher_mode
+                #                               )
         try:
             self.buffer += data.decode()
         except:

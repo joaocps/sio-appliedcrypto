@@ -1,4 +1,5 @@
 import os
+import base64
 
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.backends import default_backend
@@ -8,7 +9,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives import padding, asymmetric
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 
@@ -59,6 +60,28 @@ class Asymmetric(object):
             pk,
             backend=default_backend())
 
+    # def encrypt(self, pubk, content):
+    #     ciphertext = pubk.encrypt(
+    #         content,
+    #         asymmetric.padding.OAEP(
+    #             mgf=asymmetric.padding.MGF1(hashes.SHA256()),
+    #             algorithm=hashes.SHA256(),
+    #             label=None
+    #         )
+    #     )
+    #     return ciphertext
+    #
+    # def decrypt(self, privk, content):
+    #     plaintext = privk.decrypt(
+    #         content,
+    #         asymmetric.padding.OAEP(
+    #             mgf=asymmetric.padding.MGF1(algorithm=hashes.SHA256()),
+    #             algorithm=hashes.SHA256(),
+    #             label=None
+    #         )
+    #     )
+    #     return plaintext
+
 
 class Symmetric:
 
@@ -105,10 +128,12 @@ class Symmetric:
                 padded_data = padder.update(msg)
                 padded_data += padder.finalize()
                 ct = encryptor.update(padded_data)
-                return iv + salt + ct
+                # return base64.b64encode(iv + salt + ct)
+                return base64.b64encode(iv + salt + ct)
             else:
                 ct = encryptor.update(msg)
-                return iv + salt + ct
+                # return base64.b64encode(iv + salt + ct)
+                return base64.b64encode(iv + salt + ct)
         # 3DES
         elif algorithm == 2:
 
@@ -121,7 +146,8 @@ class Symmetric:
             if block == 1:
                 m = modes.CBC(iv)
             elif block == 2:
-                m = modes.CTR(iv)
+                # 3DES não suporta CTR
+                m = modes.CBC(iv)
             else:
                 return None
             if key == "":
@@ -132,15 +158,12 @@ class Symmetric:
 
             encryptor = cipher.encryptor()
 
-            if block == 1:
-                padder = padding.PKCS7(8).padder()
-                padded_data = padder.update(msg)
-                padded_data += padder.finalize()
-                ct = encryptor.update(padded_data)
-                return iv + salt + ct
-            else:
-                ct = encryptor.update(msg)
-                return iv + salt + ct
+            padder = padding.PKCS7(64).padder()
+            padded_data = padder.update(msg)
+            padded_data += padder.finalize()
+            ct = encryptor.update(padded_data)
+            #return iv + salt + ct
+            return base64.b64encode(iv + salt + ct)
 
         # CHACHA20
         elif algorithm == 3:
@@ -158,13 +181,13 @@ class Symmetric:
             cipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None, backend=backend)
             encryptor = cipher.encryptor()
             ct = encryptor.update(msg)
-            return nonce + salt + ct
+            return base64.b64encode(nonce + salt + ct)
 
         return None
 
     def decrypt(self, algorithm, msg, hasht, block, key="", password="", file=""):
         backend = default_backend()
-
+        msg = base64.b64decode(msg)
         if hasht == 1:
             alg = hashes.SHA256()
         elif hasht == 2:
@@ -174,6 +197,7 @@ class Symmetric:
 
         # AES128
         if algorithm == 1:
+            #msg = base64.b64decode(msg)
             iv = msg[0:16]
             salt = msg[16:32]
             msg = msg[32:]
@@ -208,6 +232,7 @@ class Symmetric:
 
         # 3DES
         elif algorithm == 2:
+            #msg = base64.b64decode(msg)
             iv = msg[0:8]
             salt = msg[8:24]
             msg = msg[24:]
@@ -222,7 +247,8 @@ class Symmetric:
             if block == 1:
                 m = modes.CBC(iv)
             elif block == 2:
-                m = modes.CTR(iv)
+                # 3DES não suporta CTR
+                m = modes.CBC(iv)
             else:
                 return None
             if key == "":
@@ -232,16 +258,14 @@ class Symmetric:
             decipher = Cipher(algorithms.TripleDES(key), mode=m, backend=default_backend())
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
-            if block == 1:
-                unpadder = padding.PKCS7(8).unpadder()
-                data = unpadder.update(dec)
-                data += unpadder.finalize()
-                return data
-            else:
-                return dec
+            unpadder = padding.PKCS7(64).unpadder()
+            data = unpadder.update(dec)
+            data += unpadder.finalize()
+            return data
 
         # CHACHA20
         elif algorithm == 3:
+            #msg = base64.b64decode(msg)
             iv = msg[0:16]
             salt = msg[16:32]
             msg = msg[32:]
@@ -260,7 +284,6 @@ class Symmetric:
             decipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None, backend=default_backend())
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
-
             return dec
 
         return None

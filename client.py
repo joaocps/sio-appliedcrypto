@@ -49,8 +49,6 @@ class ClientProtocol(asyncio.Protocol):
         self.server_dh = None
         self.dh_priv = None
         self.dh_pub = None
-        # self.iv = ""
-        # self.salt = ""
 
     def handshake(self):
 
@@ -234,16 +232,19 @@ class ClientProtocol(asyncio.Protocol):
         message_b = (json.dumps(message) + '\r\n').encode()
         if self.state == STATE_CONNECT:
             message_b = self.symmetric.handshake_encrypt(message_b)
-        else:  # if self.state == STATE_DATA:
-            #logger.debug("Send: {}".format(message))
+        else:
             if self.symmetric_cypher == 2:
                 message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
-                                                   self.cypher_mode,
+                                                   self.cypher_mode
                                                    )
             else:
                 message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
                                                    self.cypher_mode,
                                                    key=self.shared)
+                # TEST
+                # message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
+                #                                    self.cypher_mode
+                #                                    )
         self.transport.write(message_b)
 
 
