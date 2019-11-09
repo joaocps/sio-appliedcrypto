@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 
+# TODO mudar ctr
 class Symmetric:
 
     def encrypt(self, algorithm, password, msg, filename, hasht, block):

@@ -1,9 +1,11 @@
 import asyncio
+import getpass
 import json
 import base64
 import argparse
 import coloredlogs, logging
 import os
+from default_crypto import Asymmetric, Symmetric, DHexchange
 
 logger = logging.getLogger('root')
 
@@ -11,6 +13,9 @@ STATE_CONNECT = 0
 STATE_OPEN = 1
 STATE_DATA = 2
 STATE_CLOSE = 3
+
+# GLOBAL
+crypto_dir = './client-keys'
 
 
 class ClientProtocol(asyncio.Protocol):
@@ -25,12 +30,43 @@ class ClientProtocol(asyncio.Protocol):
         :param loop: Asyncio Loop to use
         """
 
+        self.shared = None
         self.file_name = file_name
         self.loop = loop
         self.state = STATE_CONNECT  # Initial State
         self.buffer = ''  # Buffer to receive data chunks
+        self.asymmetric_encrypt = Asymmetric()
+        self.symmetric = Symmetric()
+        self.dh = DHexchange()
+
+        self.symmetric_cypher = None
+        self.cypher_mode = None
+        self.synthesis_algorithm = None
+
+        self._public_key = None
+        self._private_key = None
+        self.server_pub = None
+        self.server_dh = None
+        self.dh_priv = None
+        self.dh_pub = None
+        # self.iv = ""
+        # self.salt = ""
 
     def handshake(self):
+
+        logger.info("Introduce password to generate rsa key: ")
+        password = getpass.getpass('Password:')
+
+        if not os.path.exists("client-keys"):
+            try:
+                os.mkdir("client-keys")
+                self._private_key, self._public_key = self.asymmetric_encrypt.generate_rsa_keys(crypto_dir, "client",
+                                                                                                password)
+            except:
+                logger.exception("Unable to create storage directory")
+        else:
+            self._private_key, self._public_key = self.asymmetric_encrypt.generate_rsa_keys(crypto_dir, "client",
+                                                                                            password)
 
         symmetric_cypher = int(input("Symmetric Cypher ( aes128(1), 3des(2) or chacha20(3) ): "))
         cypher_mode = int(input("Cypher mode ( cbc(1) or ctr(2) ): "))
@@ -59,11 +95,22 @@ class ClientProtocol(asyncio.Protocol):
 
         logger.debug('Connected to Server')
 
-        symmetric_cypher, cypher_mode, synthesis_algorithm = self.handshake()
+        self.symmetric_cypher, self.cypher_mode, self.synthesis_algorithm = self.handshake()
+        self.dh_priv, self.dh_pub = self.dh.generate_keys()
 
-        message = {'type': 'OPEN', 'file_name': self.file_name, 'symmetric_cypher': symmetric_cypher,
-                   'cypher_mode': cypher_mode, 'synthesis_algorithm': synthesis_algorithm}
+        print(self._public_key)
+        message = {'type': 'OPEN',
+                   'file_name': self.file_name,
+                   'symmetric_cypher': self.symmetric_cypher,
+                   'cypher_mode': self.cypher_mode,
+                   'synthesis_algorithm': self.synthesis_algorithm,
+                   # É SUPOSTO ENVIAR ASSIM (str) A PUB KEY?
+                   'client_public_key': self._public_key.decode(),
+                   'handshake': self.dh_pub.decode()
+                   }
         self._send(message)
+
+        logger.info(message)
 
         self.state = STATE_OPEN
 
@@ -76,6 +123,9 @@ class ClientProtocol(asyncio.Protocol):
         :return:
         """
         logger.debug('Received: {}'.format(data))
+        if self.state == STATE_OPEN:
+            data = self.symmetric.handshake_decrypt(data)
+            # logger.debug('DEBUG: Decrypt: ', data)
         try:
             self.buffer += data.decode()
         except:
@@ -116,6 +166,11 @@ class ClientProtocol(asyncio.Protocol):
         if mtype == 'OK':  # Server replied OK. We can advance the state
             if self.state == STATE_OPEN:
                 logger.info("Channel open")
+                self.server_pub = self.asymmetric_encrypt.load_pub_from_str(message["server_pub_key"].encode())
+                logger.debug(self.server_pub)
+                self.server_dh = self.asymmetric_encrypt.load_pub_from_str(message["handshake"].encode())
+                self.shared = self.dh.derive_key(self.dh.create_secret(self.dh_priv, self.server_dh),
+                                                 self.synthesis_algorithm)
                 self.send_file(self.file_name)
             elif self.state == STATE_DATA:  # Got an OK during a message transfer.
                 # Reserved for future use
@@ -139,6 +194,11 @@ class ClientProtocol(asyncio.Protocol):
         :return:
         """
         logger.info('The server closed the connection')
+
+        if os.path.exists("client-keys"):
+            os.remove("client-keys/" + 'client_private_rsa.pem')
+            os.remove("client-keys/" + 'client_public_rsa.pem')
+
         self.loop.stop()
 
     def send_file(self, file_name: str) -> None:
@@ -148,10 +208,10 @@ class ClientProtocol(asyncio.Protocol):
         :param file_name: File to send
         :return:  None
         """
-
         with open(file_name, 'rb') as f:
             message = {'type': 'DATA', 'data': None}
             read_size = 16 * 60
+
             while True:
                 data = f.read(16 * 60)
                 message['data'] = base64.b64encode(data).decode()
@@ -170,9 +230,20 @@ class ClientProtocol(asyncio.Protocol):
         :param message:
         :return:
         """
-        logger.debug("Send: {}".format(message))
 
         message_b = (json.dumps(message) + '\r\n').encode()
+        if self.state == STATE_CONNECT:
+            message_b = self.symmetric.handshake_encrypt(message_b)
+        else:  # if self.state == STATE_DATA:
+            #logger.debug("Send: {}".format(message))
+            if self.symmetric_cypher == 2:
+                message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
+                                                   self.cypher_mode,
+                                                   )
+            else:
+                message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
+                                                   self.cypher_mode,
+                                                   key=self.shared)
         self.transport.write(message_b)
 
 
