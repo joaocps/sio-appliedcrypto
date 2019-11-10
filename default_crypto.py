@@ -1,7 +1,6 @@
 import os
 import base64
 
-from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
@@ -10,7 +9,6 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding, asymmetric
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 
 class Asymmetric(object):
@@ -22,7 +20,7 @@ class Asymmetric(object):
         """
         Create and save the rsa private and public key to file
         """
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096, backend=default_backend())
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
         pem = private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
@@ -60,39 +58,36 @@ class Asymmetric(object):
             pk,
             backend=default_backend())
 
-    # def encrypt(self, pubk, content):
-    #     ciphertext = pubk.encrypt(
-    #         content,
-    #         asymmetric.padding.OAEP(
-    #             mgf=asymmetric.padding.MGF1(hashes.SHA256()),
-    #             algorithm=hashes.SHA256(),
-    #             label=None
-    #         )
-    #     )
-    #     return ciphertext
-    #
-    # def decrypt(self, privk, content):
-    #     plaintext = privk.decrypt(
-    #         content,
-    #         asymmetric.padding.OAEP(
-    #             mgf=asymmetric.padding.MGF1(algorithm=hashes.SHA256()),
-    #             algorithm=hashes.SHA256(),
-    #             label=None
-    #         )
-    #     )
-    #     return plaintext
+    def encrypt(self, pubk, content):
+        ciphertext = pubk.encrypt(
+            content,
+            asymmetric.padding.OAEP(
+                mgf=asymmetric.padding.MGF1(hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        return ciphertext
+
+    def decrypt(self, privk, content):
+        plaintext = privk.decrypt(
+            content,
+            asymmetric.padding.OAEP(
+                mgf=asymmetric.padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        return plaintext
 
 
 class Symmetric:
+    def __init__(self):
+        self.rsa = Asymmetric()
 
-    def encrypt(self, algorithm, msg, hasht, block, key="", password="", filename=""):
+    def encrypt(self, algorithm, msg, hasht, block, pkey, password="", filename=""):
         backend = default_backend()
         salt = os.urandom(16)
-
-        # crypto_file = filename + "_stuff"
-        #
-        # fout = open(crypto_file, "wb")
-        # fout.write(salt)
 
         if hasht == 1:
             alg = hashes.SHA256()
@@ -105,20 +100,16 @@ class Symmetric:
         if algorithm == 1:
             iv = os.urandom(16)
 
-            # fout.write(iv)
-            # fout.write(password.encode())
-            # fout.close()
-
             if block == 1:
                 m = modes.CBC(iv)
             elif block == 2:
                 m = modes.CTR(iv)
             else:
                 return None
-            if key == "":
-                kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
-                key = kdf.derive(password.encode())
 
+            kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
+            key = kdf.derive(password.encode())
+            hybrid = self.rsa.encrypt(pkey, iv + salt)
             cipher = Cipher(algorithms.AES(key), mode=m, backend=backend)
 
             encryptor = cipher.encryptor()
@@ -128,66 +119,48 @@ class Symmetric:
                 padded_data = padder.update(msg)
                 padded_data += padder.finalize()
                 ct = encryptor.update(padded_data)
-                # return base64.b64encode(iv + salt + ct)
-                return base64.b64encode(iv + salt + ct)
+                return base64.b64encode(hybrid + ct)
             else:
                 ct = encryptor.update(msg)
-                # return base64.b64encode(iv + salt + ct)
-                return base64.b64encode(iv + salt + ct)
-        # 3DES
+                return base64.b64encode(hybrid + ct)
+
+        # 3DES Não aceita CTR
         elif algorithm == 2:
 
             iv = os.urandom(8)
 
-            # fout.write(iv)
-            # fout.write(password.encode())
-            # fout.close()
+            kdf = PBKDF2HMAC(algorithm=alg, length=16, salt=salt, iterations=100000, backend=backend)
+            key = kdf.derive(password.encode())
 
-            if block == 1:
-                m = modes.CBC(iv)
-            elif block == 2:
-                # 3DES não suporta CTR
-                m = modes.CBC(iv)
-            else:
-                return None
-            if key == "":
-                kdf = PBKDF2HMAC(algorithm=alg, length=16, salt=salt, iterations=100000, backend=backend)
-                key = kdf.derive(password.encode())
-
-            cipher = Cipher(algorithms.TripleDES(key), mode=m, backend=backend)
-
+            cipher = Cipher(algorithms.TripleDES(key), mode=modes.CBC(iv), backend=backend)
+            hybrid = self.rsa.encrypt(pkey, iv + salt)
             encryptor = cipher.encryptor()
-
             padder = padding.PKCS7(64).padder()
             padded_data = padder.update(msg)
             padded_data += padder.finalize()
             ct = encryptor.update(padded_data)
-            #return iv + salt + ct
-            return base64.b64encode(iv + salt + ct)
+            return base64.b64encode(hybrid + ct)
 
         # CHACHA20
         elif algorithm == 3:
-
             nonce = os.urandom(16)
 
-            # fout.write(nonce)
-            # fout.write(password.encode())
-            # fout.close()
-
-            if key == "":
-                kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
-                key = kdf.derive(password.encode())
+            kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
+            key = kdf.derive(password.encode())
 
             cipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None, backend=backend)
+            hybrid = self.rsa.encrypt(pkey, nonce + salt)
             encryptor = cipher.encryptor()
             ct = encryptor.update(msg)
-            return base64.b64encode(nonce + salt + ct)
+            return base64.b64encode(hybrid + ct)
 
         return None
 
-    def decrypt(self, algorithm, msg, hasht, block, key="", password="", file=""):
+    def decrypt(self, algorithm, msg, hasht, block, privkey, password="", file=""):
         backend = default_backend()
         msg = base64.b64decode(msg)
+        hybrid = self.rsa.decrypt(privkey, msg[0:256])
+        msg = msg[256:]
         if hasht == 1:
             alg = hashes.SHA256()
         elif hasht == 2:
@@ -197,17 +170,8 @@ class Symmetric:
 
         # AES128
         if algorithm == 1:
-            #msg = base64.b64decode(msg)
-            iv = msg[0:16]
-            salt = msg[16:32]
-            msg = msg[32:]
-            # f = open(file, "rb")
-            # try:
-            #     salt = f.read(16)
-            #     iv = f.read(16)
-            #     password = f.read()
-            # finally:
-            #     f.close()
+            iv = hybrid[:16]
+            salt = hybrid[16:]
 
             if block == 1:
                 m = modes.CBC(iv)
@@ -215,9 +179,9 @@ class Symmetric:
                 m = modes.CTR(iv)
             else:
                 return None
-            if key == "":
-                kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
-                key = kdf.derive(password.encode())
+
+            kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
+            key = kdf.derive(password.encode())
 
             decipher = Cipher(algorithms.AES(key), mode=m, backend=default_backend())
             decryptor = decipher.decryptor()
@@ -230,32 +194,18 @@ class Symmetric:
             else:
                 return dec
 
-        # 3DES
+        # 3DES Não aceita CTR
         elif algorithm == 2:
-            #msg = base64.b64decode(msg)
-            iv = msg[0:8]
-            salt = msg[8:24]
-            msg = msg[24:]
-            # f = open(file, "rb")
-            # try:
-            #     salt = f.read(16)
-            #     iv = f.read(8)
-            #     password = f.read()
-            # finally:
-            #     f.close()
+            iv = hybrid[:8]
+            salt = hybrid[8:]
+            # iv = msg[0:8]
+            # salt = msg[8:24]
+            # msg = msg[24:]
 
-            if block == 1:
-                m = modes.CBC(iv)
-            elif block == 2:
-                # 3DES não suporta CTR
-                m = modes.CBC(iv)
-            else:
-                return None
-            if key == "":
-                kdf = PBKDF2HMAC(algorithm=alg, length=16, salt=salt, iterations=100000, backend=backend)
-                key = kdf.derive(password.encode())
+            kdf = PBKDF2HMAC(algorithm=alg, length=16, salt=salt, iterations=100000, backend=backend)
+            key = kdf.derive(password.encode())
 
-            decipher = Cipher(algorithms.TripleDES(key), mode=m, backend=default_backend())
+            decipher = Cipher(algorithms.TripleDES(key), mode=modes.CBC(iv), backend=default_backend())
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
             unpadder = padding.PKCS7(64).unpadder()
@@ -265,21 +215,14 @@ class Symmetric:
 
         # CHACHA20
         elif algorithm == 3:
-            #msg = base64.b64decode(msg)
-            iv = msg[0:16]
-            salt = msg[16:32]
-            msg = msg[32:]
-            # f = open(file, "rb")
-            # try:
-            #     salt = f.read(16)
-            #     nonce = f.read(16)
-            #     password = f.read()
-            # finally:
-            #     f.close()
-            nonce = iv
-            if key == "":
-                kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
-                key = kdf.derive(password.encode())
+            nonce = hybrid[:16]
+            salt = hybrid[16:]
+            # iv = msg[0:16]
+            # salt = msg[16:32]
+            # msg = msg[32:]
+
+            kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
+            key = kdf.derive(password.encode())
 
             decipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None, backend=default_backend())
             decryptor = decipher.decryptor()
@@ -288,13 +231,12 @@ class Symmetric:
 
         return None
 
-    def handshake_encrypt(self, message, key=""):
+    def handshake_encrypt(self, message):
         backend = default_backend()
         iv = os.urandom(16)
         salt = os.urandom(16)
-        if key == "":
-            kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000, backend=backend)
-            key = kdf.derive(b'hs')
+        kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000, backend=backend)
+        key = kdf.derive(b'hs')
 
         cipher = Cipher(algorithms.AES(key), mode=modes.CBC(iv), backend=backend)
         encryptor = cipher.encryptor()
@@ -307,15 +249,14 @@ class Symmetric:
         ct = encryptor.update(padded_data)
         return iv + salt + ct
 
-    def handshake_decrypt(self, message, key=""):
+    def handshake_decrypt(self, message):
         backend = default_backend()
         iv = message[0:16]
         salt = message[16:32]
         message = message[32:]
 
-        if key == "":
-            kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000, backend=backend)
-            key = kdf.derive(b'hs')
+        kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000, backend=backend)
+        key = kdf.derive(b'hs')
 
         decipher = Cipher(algorithms.AES(key), mode=modes.CBC(iv), backend=default_backend())
         decryptor = decipher.decryptor()
@@ -324,36 +265,3 @@ class Symmetric:
         data = unpadder.update(dec)
         data += unpadder.finalize()
         return data
-
-
-class DHexchange:
-
-    def generate_keys(self):
-        private = ec.generate_private_key(
-            ec.SECP384R1(), default_backend()
-        )
-        public = private.public_key()
-        public_pem = public.public_bytes(encoding=serialization.Encoding.PEM,
-                                         format=serialization.PublicFormat.SubjectPublicKeyInfo)
-
-        return private, public_pem
-
-    def create_secret(self, private, public):
-        return private.exchange(ec.ECDH(), public)
-
-    def derive_key(self, shared_secret, hasht):
-        if hasht == 1:
-            alg = hashes.SHA256()
-        elif hasht == 2:
-            alg = hashes.SHA512()
-        else:
-            return None
-        key = HKDF(
-            algorithm=alg,
-            length=32,
-            salt=None,
-            info=b'handshake data',
-            backend=default_backend()
-        ).derive(shared_secret)
-
-        return key

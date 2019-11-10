@@ -5,7 +5,7 @@ import base64
 import argparse
 import coloredlogs, logging
 import os
-from default_crypto import Asymmetric, Symmetric, DHexchange
+from default_crypto import Asymmetric, Symmetric
 
 logger = logging.getLogger('root')
 
@@ -37,7 +37,6 @@ class ClientProtocol(asyncio.Protocol):
         self.buffer = ''  # Buffer to receive data chunks
         self.asymmetric_encrypt = Asymmetric()
         self.symmetric = Symmetric()
-        self.dh = DHexchange()
 
         self.symmetric_cypher = None
         self.cypher_mode = None
@@ -46,9 +45,6 @@ class ClientProtocol(asyncio.Protocol):
         self._public_key = None
         self._private_key = None
         self.server_pub = None
-        self.server_dh = None
-        self.dh_priv = None
-        self.dh_pub = None
 
     def handshake(self):
 
@@ -94,7 +90,6 @@ class ClientProtocol(asyncio.Protocol):
         logger.debug('Connected to Server')
 
         self.symmetric_cypher, self.cypher_mode, self.synthesis_algorithm = self.handshake()
-        self.dh_priv, self.dh_pub = self.dh.generate_keys()
 
         print(self._public_key)
         message = {'type': 'OPEN',
@@ -103,8 +98,7 @@ class ClientProtocol(asyncio.Protocol):
                    'cypher_mode': self.cypher_mode,
                    'synthesis_algorithm': self.synthesis_algorithm,
                    # É SUPOSTO ENVIAR ASSIM (str) A PUB KEY?
-                   'client_public_key': self._public_key.decode(),
-                   'handshake': self.dh_pub.decode()
+                   'client_public_key': self._public_key.decode()
                    }
         self._send(message)
 
@@ -165,10 +159,6 @@ class ClientProtocol(asyncio.Protocol):
             if self.state == STATE_OPEN:
                 logger.info("Channel open")
                 self.server_pub = self.asymmetric_encrypt.load_pub_from_str(message["server_pub_key"].encode())
-                logger.debug(self.server_pub)
-                self.server_dh = self.asymmetric_encrypt.load_pub_from_str(message["handshake"].encode())
-                self.shared = self.dh.derive_key(self.dh.create_secret(self.dh_priv, self.server_dh),
-                                                 self.synthesis_algorithm)
                 self.send_file(self.file_name)
             elif self.state == STATE_DATA:  # Got an OK during a message transfer.
                 # Reserved for future use
@@ -233,18 +223,9 @@ class ClientProtocol(asyncio.Protocol):
         if self.state == STATE_CONNECT:
             message_b = self.symmetric.handshake_encrypt(message_b)
         else:
-            if self.symmetric_cypher == 2:
-                message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
-                                                   self.cypher_mode
-                                                   )
-            else:
-                message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
-                                                   self.cypher_mode,
-                                                   key=self.shared)
-                # TEST
-                # message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
-                #                                    self.cypher_mode
-                #                                    )
+            message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
+                                               self.cypher_mode,
+                                               pkey=self.server_pub)
         self.transport.write(message_b)
 
 

@@ -2,13 +2,13 @@ import asyncio
 import json
 import base64
 import argparse
-import coloredlogs, logging
+import coloredlogs
+import logging
 import re
 import os
 import getpass
-import time
 from aio_tcpserver import tcp_server
-from default_crypto import Asymmetric, Symmetric, DHexchange
+from default_crypto import Asymmetric, Symmetric
 
 logger = logging.getLogger('root')
 
@@ -25,8 +25,8 @@ crypto_dir = './server-keys'
 class ClientHandler(asyncio.Protocol):
     def __init__(self, signal):
         """
-		Default constructor
-		"""
+        Default constructor
+        """
 
         self.signal = signal
         self.state = 0
@@ -38,30 +38,21 @@ class ClientHandler(asyncio.Protocol):
         self.peername = ''
         self.asymmetric_encrypt = Asymmetric()
         self.symmetric = Symmetric()
-        self.dh = DHexchange()
 
         self.symmetric_cypher = None
         self.cypher_mode = None
         self.synthesis_algorithm = None
         self.client_pub = None
-        self.client_dh = None
         self.server_pub = None
         self.server_priv = None
-        self.dh_priv = None
-        self.dh_pub = None
-        self.shared = None
-
-        self.count = 0
-        self.iv = None
-        self.salt = None
 
     def connection_made(self, transport) -> None:
         """
-		Called when a client connects
+        Called when a client connects
 
-		:param transport: The transport stream to use with this client
-		:return:
-		"""
+        :param transport: The transport stream to use with this client
+        :return:
+        """
         self.peername = transport.get_extra_info('peername')
         logger.info('\n\nConnection from {}'.format(self.peername))
 
@@ -80,7 +71,6 @@ class ClientHandler(asyncio.Protocol):
             self.server_priv, self.server_pub = self.asymmetric_encrypt.generate_rsa_keys(crypto_dir,
                                                                                           str(self.peername[1]),
                                                                                           password)
-        self.dh_priv, self.dh_pub = self.dh.generate_keys()
         self.transport = transport
         self.state = STATE_CONNECT
 
@@ -95,37 +85,16 @@ class ClientHandler(asyncio.Protocol):
         # logger.debug('Received: {}'.format(data))
         if self.state == STATE_CONNECT:
             data = self.symmetric.handshake_decrypt(data)
-        elif self.state == STATE_OPEN:
-            if self.symmetric_cypher == 2:
-                data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
-                                              self.cypher_mode
-                                              )
-            else:
-                data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
-                                              self.cypher_mode,
-                                              key=self.shared)
-                # TEST NO DH
-                # data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
-                #                               self.cypher_mode
-                #                               )
-        elif self.state == STATE_DATA:
-            if self.symmetric_cypher == 2:
-                data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
-                                              self.cypher_mode
-                                              )
-            else:
-                data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
-                                              self.cypher_mode,
-                                              key=self.shared)
-                # TEST NO DH
-                # data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
-                #                               self.cypher_mode
-                #                               )
+        else:
+            data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
+                                          self.cypher_mode,
+                                          privkey=self.server_priv)
+
         try:
             self.buffer += data.decode()
         except:
             logger.exception('Could not decode data from client')
-            logger.exception("ERROR: {} ".format(data))
+
         idx = self.buffer.find('\r\n')
 
         while idx >= 0:  # While there are separators
@@ -142,11 +111,11 @@ class ClientHandler(asyncio.Protocol):
 
     def on_frame(self, frame: str) -> None:
         """
-		Called when a frame (JSON Object) is extracted
+        Called when a frame (JSON Object) is extracted
 
-		:param frame: The JSON object to process
-		:return:
-		"""
+        :param frame: The JSON object to process
+        :return:
+        """
         # logger.debug("Frame: {}".format(frame))
         try:
             message = json.loads(frame)
@@ -183,12 +152,12 @@ class ClientHandler(asyncio.Protocol):
 
     def process_open(self, message: str) -> bool:
         """
-		Processes an OPEN message from the client
-		This message should contain the filename
+        Processes an OPEN message from the client
+        This message should contain the filename
 
-		:param message: The message to process
-		:return: Boolean indicating the success of the operation
-		"""
+        :param message: The message to process
+        :return: Boolean indicating the success of the operation
+        """
         logger.debug("Process Open: {}".format(message))
 
         if self.state != STATE_CONNECT:
@@ -202,11 +171,9 @@ class ClientHandler(asyncio.Protocol):
         # print(message["client_public_key"])
 
         self.client_pub = self.asymmetric_encrypt.load_pub_from_str(message["client_public_key"].encode())
-        self.client_dh = self.asymmetric_encrypt.load_pub_from_str(message["handshake"].encode())
         self.symmetric_cypher = message["symmetric_cypher"]
         self.cypher_mode = message["cypher_mode"]
         self.synthesis_algorithm = message["synthesis_algorithm"]
-        self.shared = self.dh.derive_key(self.dh.create_secret(self.dh_priv, self.client_dh), self.synthesis_algorithm)
 
         # Only chars and letters in the filename
         file_name = re.sub(r'[^\w\.]', '', message['file_name'])
@@ -225,7 +192,7 @@ class ClientHandler(asyncio.Protocol):
             logger.exception("Unable to open file")
             return False
 
-        self._send({'type': 'OK', 'server_pub_key': self.server_pub.decode(), 'handshake': self.dh_pub.decode()})
+        self._send({'type': 'OK', 'server_pub_key': self.server_pub.decode()})
 
         self.file_name = file_name
         self.file_path = file_path
@@ -234,12 +201,12 @@ class ClientHandler(asyncio.Protocol):
 
     def process_data(self, message: str) -> bool:
         """
-		Processes a DATA message from the client
-		This message should contain a chunk of the file
+        Processes a DATA message from the client
+        This message should contain a chunk of the file
 
-		:param message: The message to process
-		:return: Boolean indicating the success of the operation
-		"""
+        :param message: The message to process
+        :return: Boolean indicating the success of the operation
+        """
         logger.debug("Process Data: {}".format(message))
 
         if self.state == STATE_OPEN:
@@ -276,12 +243,12 @@ class ClientHandler(asyncio.Protocol):
 
     def process_close(self, message: str) -> bool:
         """
-		Processes a CLOSE message from the client.
-		This message will trigger the termination of this session
+        Processes a CLOSE message from the client.
+        This message will trigger the termination of this session
 
-		:param message: The message to process
-		:return: Boolean indicating the success of the operation
-		"""
+        :param message: The message to process
+        :return: Boolean indicating the success of the operation
+        """
         logger.debug("Process Close: {}".format(message))
 
         self.transport.close()
@@ -299,10 +266,10 @@ class ClientHandler(asyncio.Protocol):
 
     def _send(self, message: str) -> None:
         """
-		Effectively encodes and sends a message
-		:param message:
-		:return:
-		"""
+        Effectively encodes and sends a message
+        :param message:
+        :return:
+        """
         logger.debug("Send: {}".format(message))
 
         message_b = (json.dumps(message) + '\r\n').encode()
