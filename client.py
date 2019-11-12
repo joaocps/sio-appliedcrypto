@@ -45,22 +45,23 @@ class ClientProtocol(asyncio.Protocol):
         self._public_key = None
         self._private_key = None
         self.server_pub = None
+        self.password = None
 
     def handshake(self):
 
         logger.info("Introduce password to generate rsa key: ")
-        password = getpass.getpass('Password:')
+        self.password = getpass.getpass('Password:')
 
         if not os.path.exists("client-keys"):
             try:
                 os.mkdir("client-keys")
                 self._private_key, self._public_key = self.asymmetric_encrypt.generate_rsa_keys(crypto_dir, "client",
-                                                                                                password)
+                                                                                                self.password)
             except:
                 logger.exception("Unable to create storage directory")
         else:
             self._private_key, self._public_key = self.asymmetric_encrypt.generate_rsa_keys(crypto_dir, "client",
-                                                                                            password)
+                                                                                            self.password)
 
         symmetric_cypher = int(input("Symmetric Cypher ( aes128(1), 3des(2) or chacha20(3) ): "))
         cypher_mode = int(input("Cypher mode ( cbc(1) or ctr(2) ): "))
@@ -225,7 +226,7 @@ class ClientProtocol(asyncio.Protocol):
         else:
             message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
                                                self.cypher_mode,
-                                               pkey=self.server_pub)
+                                               pkey=self.server_pub, password=self.password)
         self.transport.write(message_b)
 
 

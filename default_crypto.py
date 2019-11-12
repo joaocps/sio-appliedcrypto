@@ -109,10 +109,13 @@ class Symmetric:
 
             kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
             key = kdf.derive(password.encode())
-            hybrid = self.rsa.encrypt(pkey, iv + salt)
+            hybrid = self.rsa.encrypt(pkey, iv + salt + password.encode())
             cipher = Cipher(algorithms.AES(key), mode=m, backend=backend)
 
             encryptor = cipher.encryptor()
+            print("key: ", key)
+            print("iv: ", iv)
+            print("salt: ", salt)
 
             if block == 1:
                 padder = padding.PKCS7(128).padder()
@@ -126,14 +129,16 @@ class Symmetric:
 
         # 3DES Não aceita CTR
         elif algorithm == 2:
-
             iv = os.urandom(8)
 
             kdf = PBKDF2HMAC(algorithm=alg, length=16, salt=salt, iterations=100000, backend=backend)
             key = kdf.derive(password.encode())
 
             cipher = Cipher(algorithms.TripleDES(key), mode=modes.CBC(iv), backend=backend)
-            hybrid = self.rsa.encrypt(pkey, iv + salt)
+            hybrid = self.rsa.encrypt(pkey, iv + salt + password.encode())
+            print("key: ", key)
+            print("iv: ", iv)
+            print("salt: ", salt)
             encryptor = cipher.encryptor()
             padder = padding.PKCS7(64).padder()
             padded_data = padder.update(msg)
@@ -149,14 +154,17 @@ class Symmetric:
             key = kdf.derive(password.encode())
 
             cipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None, backend=backend)
-            hybrid = self.rsa.encrypt(pkey, nonce + salt)
+            print("key: ", key)
+            print("nonce: ", nonce)
+            print("salt: ", salt)
+            hybrid = self.rsa.encrypt(pkey, nonce + salt + password.encode())
             encryptor = cipher.encryptor()
             ct = encryptor.update(msg)
             return base64.b64encode(hybrid + ct)
 
         return None
 
-    def decrypt(self, algorithm, msg, hasht, block, privkey, password="", file=""):
+    def decrypt(self, algorithm, msg, hasht, block, privkey):
         backend = default_backend()
         msg = base64.b64decode(msg)
         hybrid = self.rsa.decrypt(privkey, msg[0:256])
@@ -171,7 +179,8 @@ class Symmetric:
         # AES128
         if algorithm == 1:
             iv = hybrid[:16]
-            salt = hybrid[16:]
+            salt = hybrid[16:32]
+            password = hybrid[32:]
 
             if block == 1:
                 m = modes.CBC(iv)
@@ -181,11 +190,14 @@ class Symmetric:
                 return None
 
             kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
-            key = kdf.derive(password.encode())
+            key = kdf.derive(password)
 
             decipher = Cipher(algorithms.AES(key), mode=m, backend=default_backend())
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
+            print("key: ", key)
+            print("iv: ", iv)
+            print("salt: ", salt)
             if block == 1:
                 unpadder = padding.PKCS7(128).unpadder()
                 data = unpadder.update(dec)
@@ -194,18 +206,18 @@ class Symmetric:
             else:
                 return dec
 
-        # 3DES Não aceita CTR
         elif algorithm == 2:
             iv = hybrid[:8]
-            salt = hybrid[8:]
-            # iv = msg[0:8]
-            # salt = msg[8:24]
-            # msg = msg[24:]
+            salt = hybrid[8:24]
+            password = hybrid[24:]
 
             kdf = PBKDF2HMAC(algorithm=alg, length=16, salt=salt, iterations=100000, backend=backend)
-            key = kdf.derive(password.encode())
+            key = kdf.derive(password)
 
             decipher = Cipher(algorithms.TripleDES(key), mode=modes.CBC(iv), backend=default_backend())
+            print("key: ", key)
+            print("iv: ", iv)
+            print("salt: ", salt)
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
             unpadder = padding.PKCS7(64).unpadder()
@@ -216,15 +228,19 @@ class Symmetric:
         # CHACHA20
         elif algorithm == 3:
             nonce = hybrid[:16]
-            salt = hybrid[16:]
+            salt = hybrid[16:32]
+            password = hybrid[32:]
             # iv = msg[0:16]
             # salt = msg[16:32]
             # msg = msg[32:]
 
             kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
-            key = kdf.derive(password.encode())
+            key = kdf.derive(password)
 
             decipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None, backend=default_backend())
+            print("key: ", key)
+            print("nonce: ", nonce)
+            print("salt: ", salt)
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
             return dec
