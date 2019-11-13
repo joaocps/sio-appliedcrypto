@@ -3,8 +3,10 @@ import getpass
 import json
 import base64
 import argparse
-import coloredlogs, logging
+import coloredlogs
+import logging
 import os
+import time
 from default_crypto import Asymmetric, Symmetric
 
 logger = logging.getLogger('root')
@@ -228,6 +230,9 @@ class ClientProtocol(asyncio.Protocol):
                                                self.cypher_mode,
                                                pkey=self.server_pub, password=self.password)
         self.transport.write(message_b)
+
+        # Este sleep é um workaround para os blocos/pacotes perdidos ou incompletos
+        time.sleep(0.05)
 
 
 def main():

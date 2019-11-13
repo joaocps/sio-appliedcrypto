@@ -113,18 +113,20 @@ class Symmetric:
             cipher = Cipher(algorithms.AES(key), mode=m, backend=backend)
 
             encryptor = cipher.encryptor()
-            print("key: ", key)
-            print("iv: ", iv)
-            print("salt: ", salt)
+            #print("key: ", key)
+            #print("iv: ", iv)
+            #print("salt: ", salt)
 
             if block == 1:
                 padder = padding.PKCS7(128).padder()
                 padded_data = padder.update(msg)
                 padded_data += padder.finalize()
                 ct = encryptor.update(padded_data)
+                ct += encryptor.finalize()
                 return base64.b64encode(hybrid + ct)
             else:
                 ct = encryptor.update(msg)
+                ct += encryptor.finalize()
                 return base64.b64encode(hybrid + ct)
 
         # 3DES Não aceita CTR
@@ -136,14 +138,15 @@ class Symmetric:
 
             cipher = Cipher(algorithms.TripleDES(key), mode=modes.CBC(iv), backend=backend)
             hybrid = self.rsa.encrypt(pkey, iv + salt + password.encode())
-            print("key: ", key)
-            print("iv: ", iv)
-            print("salt: ", salt)
+            #print("key: ", key)
+            #print("iv: ", iv)
+            #print("salt: ", salt)
             encryptor = cipher.encryptor()
             padder = padding.PKCS7(64).padder()
             padded_data = padder.update(msg)
             padded_data += padder.finalize()
             ct = encryptor.update(padded_data)
+            ct += encryptor.finalize()
             return base64.b64encode(hybrid + ct)
 
         # CHACHA20
@@ -154,12 +157,13 @@ class Symmetric:
             key = kdf.derive(password.encode())
 
             cipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None, backend=backend)
-            print("key: ", key)
-            print("nonce: ", nonce)
-            print("salt: ", salt)
+            #print("key: ", key)
+            #print("nonce: ", nonce)
+            #print("salt: ", salt)
             hybrid = self.rsa.encrypt(pkey, nonce + salt + password.encode())
             encryptor = cipher.encryptor()
             ct = encryptor.update(msg)
+            ct += encryptor.finalize()
             return base64.b64encode(hybrid + ct)
 
         return None
@@ -195,9 +199,10 @@ class Symmetric:
             decipher = Cipher(algorithms.AES(key), mode=m, backend=default_backend())
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
-            print("key: ", key)
-            print("iv: ", iv)
-            print("salt: ", salt)
+            dec += decryptor.finalize()
+            #print("key: ", key)
+            #print("iv: ", iv)
+            #print("salt: ", salt)
             if block == 1:
                 unpadder = padding.PKCS7(128).unpadder()
                 data = unpadder.update(dec)
@@ -215,11 +220,12 @@ class Symmetric:
             key = kdf.derive(password)
 
             decipher = Cipher(algorithms.TripleDES(key), mode=modes.CBC(iv), backend=default_backend())
-            print("key: ", key)
-            print("iv: ", iv)
-            print("salt: ", salt)
+            #print("key: ", key)
+            #print("iv: ", iv)
+            #print("salt: ", salt)
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
+            dec += decryptor.finalize()
             unpadder = padding.PKCS7(64).unpadder()
             data = unpadder.update(dec)
             data += unpadder.finalize()
@@ -238,11 +244,12 @@ class Symmetric:
             key = kdf.derive(password)
 
             decipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None, backend=default_backend())
-            print("key: ", key)
-            print("nonce: ", nonce)
-            print("salt: ", salt)
+            #print("key: ", key)
+            #print("nonce: ", nonce)
+            #print("salt: ", salt)
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
+            dec += decryptor.finalize()
             return dec
 
         return None
