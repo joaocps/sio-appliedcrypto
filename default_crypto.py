@@ -53,10 +53,19 @@ class Asymmetric(object):
             else:
                 return public_key
 
+    """
+    Auxiliary method to load a public key from a string/bytes text
+    """
+
     def load_pub_from_str(self, pk):
         return serialization.load_pem_public_key(
             pk,
             backend=default_backend())
+
+    """
+    Encrypt content to send using a RSA public key of the destination
+    Used to create an hybrid cipher
+    """
 
     def encrypt(self, pubk, content):
         ciphertext = pubk.encrypt(
@@ -68,6 +77,11 @@ class Asymmetric(object):
             )
         )
         return ciphertext
+
+    """
+    Decrypt received content using local RSA private key
+    Used to access parameters og hybrid cipher
+    """
 
     def decrypt(self, privk, content):
         plaintext = privk.decrypt(
@@ -82,10 +96,31 @@ class Asymmetric(object):
 
 
 class Symmetric:
+    """
+    Initializing Class Asymmetric to use methods encrypt/decrypt for Hybrid Cipher
+    """
+
     def __init__(self):
         self.rsa = Asymmetric()
 
-    def encrypt(self, algorithm, msg, hasht, block, pkey, filename=""):
+    """
+    Generic symmetric encrypt method 
+    :param algorithm accepts 
+            1 - AES
+            2 - TriplesDES
+            3 - ChaCha20
+    :param hasht accepts
+            1 - SHA256
+            2 - SHA512
+    :param block only used for AES
+            1 - CBC
+            2 - CTR 
+    :param msg content do encrypt
+    :param pkey target Public Key
+    :return hybrid cipher + encrypt content as base64
+    """
+
+    def encrypt(self, algorithm, msg, hasht, block, pkey):
         backend = default_backend()
         salt = os.urandom(16)
         password = os.urandom(32)
@@ -159,6 +194,23 @@ class Symmetric:
             return base64.b64encode(hybrid + ct)
 
         return None
+
+    """
+    Generic symmetric decrypt method 
+    :param algorithm accepts 
+            1 - AES
+            2 - TriplesDES
+            3 - ChaCha20
+    :param hasht accepts
+            1 - SHA256
+            2 - SHA512
+    :param block only used for AES
+            1 - CBC
+            2 - CTR 
+    :param msg content to decrypt
+    :param privKey local Private Key
+    :return decrypt content as bytes
+    """
 
     def decrypt(self, algorithm, msg, hasht, block, privkey):
         backend = default_backend()
@@ -234,6 +286,10 @@ class Symmetric:
 
         return None
 
+    """
+    Method to encrypt the first message sent from client/server
+    """
+
     def handshake_encrypt(self, message):
         backend = default_backend()
         iv = os.urandom(16)
@@ -251,6 +307,10 @@ class Symmetric:
 
         ct = encryptor.update(padded_data)
         return iv + salt + ct
+
+    """
+    Method to decrypt the first message sent to client/server
+    """
 
     def handshake_decrypt(self, message):
         backend = default_backend()
