@@ -85,9 +85,10 @@ class Symmetric:
     def __init__(self):
         self.rsa = Asymmetric()
 
-    def encrypt(self, algorithm, msg, hasht, block, pkey, password="", filename=""):
+    def encrypt(self, algorithm, msg, hasht, block, pkey, filename=""):
         backend = default_backend()
         salt = os.urandom(16)
+        password = os.urandom(32)
 
         if hasht == 1:
             alg = hashes.SHA256()
@@ -108,14 +109,11 @@ class Symmetric:
                 return None
 
             kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
-            key = kdf.derive(password.encode())
-            hybrid = self.rsa.encrypt(pkey, iv + salt + password.encode())
+            key = kdf.derive(password)
+            hybrid = self.rsa.encrypt(pkey, iv + salt + password)
             cipher = Cipher(algorithms.AES(key), mode=m, backend=backend)
 
             encryptor = cipher.encryptor()
-            #print("key: ", key)
-            #print("iv: ", iv)
-            #print("salt: ", salt)
 
             if block == 1:
                 padder = padding.PKCS7(128).padder()
@@ -134,13 +132,10 @@ class Symmetric:
             iv = os.urandom(8)
 
             kdf = PBKDF2HMAC(algorithm=alg, length=16, salt=salt, iterations=100000, backend=backend)
-            key = kdf.derive(password.encode())
+            key = kdf.derive(password)
 
             cipher = Cipher(algorithms.TripleDES(key), mode=modes.CBC(iv), backend=backend)
-            hybrid = self.rsa.encrypt(pkey, iv + salt + password.encode())
-            #print("key: ", key)
-            #print("iv: ", iv)
-            #print("salt: ", salt)
+            hybrid = self.rsa.encrypt(pkey, iv + salt + password)
             encryptor = cipher.encryptor()
             padder = padding.PKCS7(64).padder()
             padded_data = padder.update(msg)
@@ -154,13 +149,10 @@ class Symmetric:
             nonce = os.urandom(16)
 
             kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
-            key = kdf.derive(password.encode())
+            key = kdf.derive(password)
 
             cipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None, backend=backend)
-            #print("key: ", key)
-            #print("nonce: ", nonce)
-            #print("salt: ", salt)
-            hybrid = self.rsa.encrypt(pkey, nonce + salt + password.encode())
+            hybrid = self.rsa.encrypt(pkey, nonce + salt + password)
             encryptor = cipher.encryptor()
             ct = encryptor.update(msg)
             ct += encryptor.finalize()
@@ -200,9 +192,6 @@ class Symmetric:
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
             dec += decryptor.finalize()
-            #print("key: ", key)
-            #print("iv: ", iv)
-            #print("salt: ", salt)
             if block == 1:
                 unpadder = padding.PKCS7(128).unpadder()
                 data = unpadder.update(dec)
@@ -220,9 +209,6 @@ class Symmetric:
             key = kdf.derive(password)
 
             decipher = Cipher(algorithms.TripleDES(key), mode=modes.CBC(iv), backend=default_backend())
-            #print("key: ", key)
-            #print("iv: ", iv)
-            #print("salt: ", salt)
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
             dec += decryptor.finalize()
@@ -236,17 +222,11 @@ class Symmetric:
             nonce = hybrid[:16]
             salt = hybrid[16:32]
             password = hybrid[32:]
-            # iv = msg[0:16]
-            # salt = msg[16:32]
-            # msg = msg[32:]
 
             kdf = PBKDF2HMAC(algorithm=alg, length=32, salt=salt, iterations=100000, backend=backend)
             key = kdf.derive(password)
 
             decipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None, backend=default_backend())
-            #print("key: ", key)
-            #print("nonce: ", nonce)
-            #print("salt: ", salt)
             decryptor = decipher.decryptor()
             dec = decryptor.update(msg)
             dec += decryptor.finalize()

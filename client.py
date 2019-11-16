@@ -228,7 +228,7 @@ class ClientProtocol(asyncio.Protocol):
         else:
             message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
                                                self.cypher_mode,
-                                               pkey=self.server_pub, password=self.password)
+                                               pkey=self.server_pub)
         self.transport.write(message_b)
 
         # Este sleep é um workaround para os blocos/pacotes perdidos ou incompletos
